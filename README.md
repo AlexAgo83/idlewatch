@@ -15,6 +15,7 @@ activity), skills, bank items and wallet. It only opens saves for reading, so it
 while the game is open. Use it from the command line or as a Python library.
 
 Idlewatch is an unofficial fan tool. It is not affiliated with or endorsed by Games By Malcs.
+Melvor Idle 2 is still in demo, so its save format can change with any game update.
 
 ## Get started in a minute
 
