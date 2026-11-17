@@ -108,7 +108,8 @@ def parse(data: bytes) -> dict:
         if exp and exp[1] in (8, 12):
             x = Reader(data, exp[0])
             xp = x.f64()
-            skills.append({"name": _short(name), "level": x.i32() if exp[1] == 12 else level_for(xp), "xp": round(xp, 1)})
+            level = x.i32() if exp[1] == 12 else level_for(xp)
+            skills.append({"name": _short(name), "level": level, "xp": round(xp, 1)})
     save["skills"] = skills
     save["bank"], save["wallet"] = {"stacks": 0, "tabs": 0, "items": {}}, {}
     if "MelvorBase:Bank" in entities:

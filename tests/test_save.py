@@ -47,8 +47,8 @@ def test_a_save_without_skills_still_has_empty_sections():
 
 def test_release_saves_keep_the_xp_and_the_level_comes_from_the_curve(tmp_path):
     path = tmp_path / "save.sav"
-    path.write_bytes(compressed(release=True, demo=False,
-                                skills=[("Woodcutting", 71077.0, 0), ("Mining", 270726.7, 0), ("Firemaking", 35563.0, 0)]))
+    skills = [("Woodcutting", 71077.0, 0), ("Mining", 270726.7, 0), ("Firemaking", 35563.0, 0)]
+    path.write_bytes(compressed(release=True, demo=False, skills=skills))
     assert idlewatch.load(path)["skills"] == [{"name": "Woodcutting", "level": 46, "xp": 71077.0},
                                               {"name": "Mining", "level": 59, "xp": 270726.7},
                                               {"name": "Firemaking", "level": 39, "xp": 35563.0}]
