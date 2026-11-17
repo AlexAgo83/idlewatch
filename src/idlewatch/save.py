@@ -1,13 +1,15 @@
 """Read-only decoder for Melvor Idle 2 saves (a Brotli stream holding a .NET BinaryWriter layout).
 
 A save starts with a header (character, mode, time, current activity, totals), then a table of
-entities, each a table of components. Skills are entities with a 12-byte Experience component
-(float64 xp, int32 level); the bank is MelvorBase:Bank with Inventory and Wallet components. Bank items
+entities, each a table of components. Skills are entities with an Experience component: float64 xp, then
+an int32 level in the demo (12 bytes); the release (save version 31) keeps the xp only (8 bytes) and the level
+comes from the game's xp curve. The bank is MelvorBase:Bank with Inventory and Wallet components. Bank items
 are kept by short name with their quantity; placeholders (stacks with quantity 0) are left out.
 """
 from __future__ import annotations
 
 import datetime
+import math
 import struct
 import uuid
 
@@ -75,6 +77,17 @@ def _table(reader: Reader) -> dict[str, tuple[int, int]]:
     return found
 
 
+def level_for(xp: float) -> int:
+    """The level an xp total reaches on Melvor's curve (it matches every demo save that still stored both)."""
+    level, total = 1, 0.0
+    while level < 200:
+        total += math.floor(level + 300 * 2 ** (level / 7))
+        if math.floor(total / 4) > xp:
+            return level
+        level += 1
+    return level
+
+
 def _short(name: str) -> str:
     return name.split(":", 1)[-1]
 
@@ -92,10 +105,10 @@ def parse(data: bytes) -> dict:
     skills = []
     for name, (pos, _) in entities.items():
         exp = _table(Reader(data, pos)).get("Experience")
-        if exp and exp[1] == 12:
+        if exp and exp[1] in (8, 12):
             x = Reader(data, exp[0])
             xp = x.f64()
-            skills.append({"name": _short(name), "level": x.i32(), "xp": round(xp, 1)})
+            skills.append({"name": _short(name), "level": x.i32() if exp[1] == 12 else level_for(xp), "xp": round(xp, 1)})
     save["skills"] = skills
     save["bank"], save["wallet"] = {"stacks": 0, "tabs": 0, "items": {}}, {}
     if "MelvorBase:Bank" in entities:

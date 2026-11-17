@@ -30,7 +30,7 @@ def tab(label: str, items) -> bytes:
 
 
 def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2, 3, 4, 5), skills=SKILLS,
-         uid=UUID) -> bytes:
+         uid=UUID, release=False) -> bytes:
     ticks = (at - datetime.datetime(1, 1, 1)) // datetime.timedelta(microseconds=1) * 10
     header = (struct.pack("<i", 28) + uuid.UUID(uid).bytes_le + text(name) + text(mode)
               + struct.pack("<q", (ticks | 1 << 63) - (1 << 64))  # DateTimeKind.Local, as ToBinary writes it
@@ -43,7 +43,9 @@ def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2,
     entities = {"MelvorBase:OfflineProgress": table({"State": b"\x01\x02"}),
                 "MelvorBase:Bank": table({"Inventory": inventory, "Wallet": wallet})}
     for skill, xp, level in skills:
-        entities[f"MelvorBase:{skill}"] = table({"Mastery": b"\0" * 7, "Experience": struct.pack("<di", xp, level)})
+        # The release keeps the xp only; the demo also stored the level.
+        experience = struct.pack("<d", xp) if release else struct.pack("<di", xp, level)
+        entities[f"MelvorBase:{skill}"] = table({"Mastery": b"\0" * 7, "Experience": experience})
     return header + table(entities)
 
 

@@ -43,3 +43,17 @@ def test_long_names_use_multibyte_lengths():
 def test_a_save_without_skills_still_has_empty_sections():
     decoded = idlewatch.parse(save(skills=()))
     assert decoded["skills"] == [] and decoded["bank"]["stacks"] == 5
+
+
+def test_release_saves_keep_the_xp_and_the_level_comes_from_the_curve(tmp_path):
+    path = tmp_path / "save.sav"
+    path.write_bytes(compressed(release=True, demo=False,
+                                skills=[("Woodcutting", 71077.0, 0), ("Mining", 270726.7, 0), ("Firemaking", 35563.0, 0)]))
+    assert idlewatch.load(path)["skills"] == [{"name": "Woodcutting", "level": 46, "xp": 71077.0},
+                                              {"name": "Mining", "level": 59, "xp": 270726.7},
+                                              {"name": "Firemaking", "level": 39, "xp": 35563.0}]
+
+
+def test_the_curve_matches_the_known_thresholds():
+    from idlewatch.save import level_for
+    assert [level_for(x) for x in (0, 82, 83, 13362, 13363, 13034430, 13034431)] == [1, 1, 2, 29, 30, 98, 99]
