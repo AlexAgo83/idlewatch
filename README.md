@@ -28,6 +28,11 @@ idlewatch read "<path printed by list>"
 `idlewatch list` searches the game's save folder on macOS and Windows; pass `--saves-dir` for any
 other folder. In Python, `idlewatch.load(path)` returns the same dictionary `read` prints.
 
+`save['astrology']` contains `constellations` (`id`, `value`, `xp`, `minor`, `major`) and
+`active`, using short ids. `value` is an int32 whose meaning is unconfirmed; `xp` is the stored
+float64, presumed mastery XP. Missing or unrecognized Astrology data returns
+`{'constellations': [], 'active': None}`. See [format limits](docs/saves.md#astrology).
+
 ## What you can do
 
 | Need | How | Detail |

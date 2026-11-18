@@ -3,13 +3,14 @@ import brotli
 import pytest
 
 import idlewatch
-from synthetic import UUID, compressed, save
+from synthetic import UUID, astrology, compressed, save, text
 
 EXPECTED = {
     "version": 28, "uuid": UUID, "name": "Tester", "mode": "Test", "saved_at": "2026-01-02T03:04:05Z",
     "activity": {"kind": "Combat", "target": "Treant"}, "total_level": 321, "gp": 12345, "slayer_coins": 678,
     "demo": True, "bank": {"stacks": 5, "tabs": 2, "items": {"Logs": 123, "Ore": 5, "Shrimp": 40}},
     "wallet": {"GoldPieces": 12345, "PrayerPoints": 90, "SlayerCoins": 678},
+    "astrology": {"constellations": [], "active": None},
     "skills": [{"name": "Mining", "level": 20, "xp": 1000.5}, {"name": "Fishing", "level": 25, "xp": 2500.0},
                {"name": "Thieving", "level": 15, "xp": 750.2}, {"name": "Attack", "level": 30, "xp": 4000.0}]}
 
@@ -57,3 +58,53 @@ def test_release_saves_keep_the_xp_and_the_level_comes_from_the_curve(tmp_path):
 def test_the_curve_matches_the_known_thresholds():
     from idlewatch.save import level_for
     assert [level_for(x) for x in (0, 82, 83, 13362, 13363, 13034430, 13034431)] == [1, 1, 2, 29, 30, 98, 99]
+
+
+@pytest.mark.parametrize("header", [b"", b"\0", b"\x01\0\0\0\0"])
+def test_astrology_constellations_with_nodes(tmp_path, header):
+    nodes = ["DeedreeA1", "DeedreeA2", "DeedreeB1", "DeedreeC1", "DeedreeD1", "DeedreeD2"]
+    action = astrology([("Deedree", 234, 10732.1, nodes, ["DeedreeMajor1"]),
+                        ("Iridan", 12, 321.5, ["IridanA1"], ["IridanMajor1", "IridanMajor2"]),
+                        ("Ameria", 0, 0.0, [], [])], active="Iridan", header=header)
+    data = save(release=True, demo=False, astrology_action=action)
+    expected = {"constellations": [
+        {"id": "Deedree", "value": 234, "xp": 10732.1, "minor": nodes, "major": ["DeedreeMajor1"]},
+        {"id": "Iridan", "value": 12, "xp": 321.5, "minor": ["IridanA1"],
+         "major": ["IridanMajor1", "IridanMajor2"]},
+        {"id": "Ameria", "value": 0, "xp": 0.0, "minor": [], "major": []}], "active": "Iridan"}
+    assert idlewatch.parse(data)["astrology"] == expected
+    path = tmp_path / "astrology.sav"
+    path.write_bytes(brotli.compress(data))
+    decoded = idlewatch.load(path)
+    assert decoded["astrology"] == expected
+    assert decoded["bank"] == EXPECTED["bank"]
+
+
+def test_astrology_without_purchased_nodes():
+    action = astrology([("Deedree", 234, 10732.1, [], []), ("Iridan", 0, 0.0, [], [])], "Deedree")
+    assert idlewatch.parse(save(astrology_action=action))["astrology"] == {
+        "constellations": [{"id": "Deedree", "value": 234, "xp": 10732.1, "minor": [], "major": []},
+                           {"id": "Iridan", "value": 0, "xp": 0.0, "minor": [], "major": []}],
+        "active": "Deedree"}
+
+
+@pytest.mark.parametrize("action", [None, False, astrology([])])
+def test_missing_or_empty_astrology(action):
+    assert idlewatch.parse(save(astrology_action=action))["astrology"] == {"constellations": [], "active": None}
+
+
+@pytest.mark.parametrize("action", [
+    b"unknown layout", b"\xff" * 32,
+    astrology([("Deedree", 1, 2.0, [], [])], "Deedree")[:-1],
+    astrology([("Deedree", 1, 2.0, [], [])], "Deedree") + b"extra",
+    astrology([("Deedree", 1, float("nan"), [], [])], "Deedree"),
+    astrology([("Deedree", 1, 2.0, [], [])], "Iridan"),
+    astrology([("Deedree", 1, 2.0, [], [])], "Deedree").replace(text("MelvorBase:Deedree"), b"\xff", 1),
+])
+def test_unknown_astrology_layout_does_not_break_loading(tmp_path, action):
+    path = tmp_path / "unknown-astrology.sav"
+    path.write_bytes(compressed(astrology_action=action))
+    decoded = idlewatch.load(path)
+    assert decoded["astrology"] == {"constellations": [], "active": None}
+    assert decoded["bank"] == EXPECTED["bank"]
+    assert decoded["wallet"] == EXPECTED["wallet"]

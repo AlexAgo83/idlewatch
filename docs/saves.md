@@ -26,7 +26,8 @@ A save path contains your Steam account number: keep that in mind before sharing
 - `skills`: `name`, `level` and `xp` for each skill;
 - `bank`: `stacks` (bank slots, placeholders included), `tabs`, and `items` (short item name to
   quantity, placeholders left out);
-- `wallet`: currency short name to amount.
+- `wallet`: currency short name to amount;
+- `astrology`: constellation records and the active constellation (see below).
 
 `idlewatch list` prints, for each save found, its `path`, `uuid`, `name`, `mode`, `saved_at` and
 `total_level`, or `path` and `error` when the save cannot be decoded.
@@ -53,3 +54,22 @@ component is 12 bytes: xp (float64) and level (int32). The bank is the `MelvorBa
 - `Wallet`: for each currency an amount (int64) and its id.
 
 Ids look like `MelvorBase:Logs`; Idlewatch reports the part after the colon.
+
+### Astrology
+
+The `Action` component of `MelvorBase:Astrology` is decoded as an int32 constellation count,
+then records containing an id, an int32 `value`, a float64 `xp`, an int32 minor-node count and
+its node ids, followed by an int32 major-node count and its node ids. The final string is the
+active constellation id, or an empty string for no active constellation (`None` in Python).
+All output ids omit their namespace.
+
+`value` deliberately has a neutral name: its meaning has not been established. `xp` is presumed
+mastery XP. The small prefix before the constellation count is treated as an opaque header
+(at most 16 bytes); its fields are not interpreted. Recognition requires valid namespaced ids,
+unique constellation ids, finite nonnegative XP, an active id from the list (or empty), and exact
+consumption of the component. Missing or unrecognized data yields
+`{"constellations": [], "active": null}` in JSON, without preventing the rest of the save from loading.
+
+These assumptions are covered by synthetic saves, including unknown and truncated layouts.
+No real release save is included or available for this change; the header and field semantics
+still need confirmation against one before claiming full release-format compatibility.
