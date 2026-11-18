@@ -92,6 +92,45 @@ def _short(name: str) -> str:
     return name.split(":", 1)[-1]
 
 
+def _astrology(action: bytes) -> dict:
+    """Recognize a complete constellation list after a small opaque Action header."""
+    empty = {"constellations": [], "active": None}
+
+    def identifier(reader: Reader, optional: bool = False) -> str | None:
+        name = reader.text()
+        if optional and not name:
+            return None
+        namespace, separator, short = name.partition(":")
+        if not separator or not namespace or not short or any(c.isspace() or ord(c) < 32 for c in name):
+            raise ValueError("Invalid Astrology id")
+        return short
+
+    # The Action header is not documented. Accept at most 16 opaque bytes, and only
+    # recognize the layout when every record and the final active id consume the blob.
+    # Keep this reader bounded to Action so an unknown layout cannot consume another component.
+    for start in range(min(17, len(action))):
+        r = Reader(action, start)
+        try:
+            constellations = []
+            ids = set()
+            for _ in range(r.count()):
+                name = identifier(r)
+                value, xp = r.i32(), r.f64()
+                if name in ids or not math.isfinite(xp) or xp < 0:
+                    raise ValueError("Invalid Astrology constellation")
+                ids.add(name)
+                minor = [identifier(r) for _ in range(r.count())]
+                major = [identifier(r) for _ in range(r.count())]
+                constellations.append({"id": name, "value": value, "xp": xp,
+                                       "minor": minor, "major": major})
+            active = identifier(r, optional=True)
+            if r.pos == len(action) and (active is None or active in ids):
+                return {"constellations": constellations, "active": active}
+        except ValueError:
+            continue
+    return empty
+
+
 def parse(data: bytes) -> dict:
     """Decode a decompressed save into plain values."""
     r = Reader(data)
@@ -111,6 +150,12 @@ def parse(data: bytes) -> dict:
             level = x.i32() if exp[1] == 12 else level_for(xp)
             skills.append({"name": _short(name), "level": level, "xp": round(xp, 1)})
     save["skills"] = skills
+    save["astrology"] = {"constellations": [], "active": None}
+    if "MelvorBase:Astrology" in entities:
+        parts = _table(Reader(data, entities["MelvorBase:Astrology"][0]))
+        if "Action" in parts:
+            pos, size = parts["Action"]
+            save["astrology"] = _astrology(data[pos:pos + size])
     save["bank"], save["wallet"] = {"stacks": 0, "tabs": 0, "items": {}}, {}
     if "MelvorBase:Bank" in entities:
         parts = _table(Reader(data, entities["MelvorBase:Bank"][0]))

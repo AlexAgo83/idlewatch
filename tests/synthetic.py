@@ -29,8 +29,18 @@ def tab(label: str, items) -> bytes:
             + text(label) + struct.pack("<i", 1) + struct.pack("<??", True, False) + text("tag"))
 
 
+def astrology(constellations, active="", header=b"\0") -> bytes:
+    """Build an Action blob with an opaque header and length-prefixed constellation records."""
+    out = header + struct.pack("<i", len(constellations))
+    for name, value, xp, minor, major in constellations:
+        out += text(f"MelvorBase:{name}") + struct.pack("<id", value, xp)
+        for nodes in (minor, major):
+            out += struct.pack("<i", len(nodes)) + b"".join(text(f"MelvorBase:{node}") for node in nodes)
+    return out + text(f"MelvorBase:{active}" if active else "")
+
+
 def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2, 3, 4, 5), skills=SKILLS,
-         uid=UUID, release=False) -> bytes:
+         uid=UUID, release=False, astrology_action=None) -> bytes:
     ticks = (at - datetime.datetime(1, 1, 1)) // datetime.timedelta(microseconds=1) * 10
     header = (struct.pack("<i", 28) + uuid.UUID(uid).bytes_le + text(name) + text(mode)
               + struct.pack("<q", (ticks | 1 << 63) - (1 << 64))  # DateTimeKind.Local, as ToBinary writes it
@@ -46,6 +56,11 @@ def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2,
         # The release keeps the xp only; the demo also stored the level.
         experience = struct.pack("<d", xp) if release else struct.pack("<di", xp, level)
         entities[f"MelvorBase:{skill}"] = table({"Mastery": b"\0" * 7, "Experience": experience})
+    if astrology_action is not None:
+        parts = {"Experience": struct.pack("<d", 1000.0)}
+        if astrology_action is not False:
+            parts["Action"] = astrology_action
+        entities["MelvorBase:Astrology"] = table(parts)
     return header + table(entities)
 
 
