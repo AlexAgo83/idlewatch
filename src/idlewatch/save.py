@@ -248,6 +248,43 @@ def _farming(blob: bytes) -> dict:
     return out
 
 
+def _ranching(blob: bytes) -> list[dict]:
+    """Ranching land in use: its enclosure, the enclosure's condition and each animal (species, variant, three
+    gauges in save order, presumably hunger, comfort and satisfaction, and its treat slots). Empty land is left out."""
+    start = blob.find(b"MelvorBase:Land")
+    if start < 5:
+        raise ValueError("No ranching land")
+    r = Reader(blob, start - 5)
+    out = []
+    for _ in range(r.count()):
+        land, size = _short(r.text()), r.i32()
+        payload = Reader(r.take(size))
+        if size < 3 or not payload.flag() or not payload.flag():
+            continue
+        enclosure = _short(payload.text())
+        e = Reader(payload.take(payload.i32()))
+        e.flag()
+        e.take(12)  # an int32 and two timers, not interpreted
+        e.take(8)
+        condition = e.f64()
+        animals = []
+        for _ in range(e.count()):
+            species = _short(e.text())
+            a = Reader(e.take(e.i32()))
+            a.flag()
+            gauges = [round(a.f64(), 4) for _ in range(3)]
+            a.flag()
+            a.i32()
+            variant = _short(a.text())
+            treats = []
+            for _ in range(a.count()):
+                flag = a.flag()  # meaning not established (every treat of a save without treats reads False)
+                treats.append({"item": _short(a.text()), "flag": flag})
+            animals.append({"species": species, "variant": variant, "gauges": gauges, "treats": treats})
+        out.append({"land": land, "enclosure": enclosure, "condition": round(condition, 4), "animals": animals})
+    return out
+
+
 def _component(data: bytes, entities: dict, entity: str, name: str):
     if entity not in entities:
         return None
@@ -297,6 +334,7 @@ def parse(data: bytes) -> dict:
     save["equipment"] = _optional(_equipment, _component(data, entities, "MelvorBase:Combat", "Equipment"), {})
     save["slayer"] = _optional(_slayer, _component(data, entities, "MelvorBase:Slayer", "Tasks"), {})
     save["farming"] = _optional(_farming, _component(data, entities, "MelvorBase:Farming", "Passive"), {})
+    save["ranching"] = _optional(_ranching, _component(data, entities, "MelvorBase:Ranching", "Passive"), [])
     save["astrology"] = {"constellations": [], "active": None}
     if "MelvorBase:Astrology" in entities:
         parts = _table(Reader(data, entities["MelvorBase:Astrology"][0]))

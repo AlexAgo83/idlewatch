@@ -105,3 +105,24 @@ def plot(crop: str | None, fertiliser: bool = False) -> bytes:
         return b"\0" * 12
     fertilised = b"\x01" + text("MelvorBase:Fertiliser") if fertiliser else b"\0"
     return b"\x01" * 6 + text(f"MelvorBase:{crop}") + fertilised + struct.pack("<i", 2) + b"\0" * 8
+
+
+def ranch_animal(species: str, variant: str, gauges=(1.0, 0.99, 0.94), treats=("Apple",)) -> bytes:
+    body = (b"\0" + struct.pack("<ddd", *gauges) + b"\0" + struct.pack("<i", 13) + text(f"MelvorBase:{variant}")
+            + struct.pack("<i", len(treats)) + b"".join(b"\0" + text(f"MelvorBase:{t}") for t in treats)
+            + struct.pack("<ddd", 1, 2, 3))
+    return text(f"MelvorBase:{species}") + struct.pack("<i", len(body)) + body
+
+
+def ranching(lands) -> bytes:
+    """Ranching Passive: an opaque header, then land records; a used land holds an enclosure with its animals."""
+    out = b"\0\x02\0\0\0" + b"\0" * 20 + struct.pack("<i", len(lands))
+    for land, enclosure, animals in lands:
+        if enclosure is None:
+            payload = b"\0\0"
+        else:
+            enc = (b"\x01" + struct.pack("<iii", 2, 216000, 72160156) + b"\0" * 8 + struct.pack("<d", 0.99)
+                   + struct.pack("<i", len(animals)) + b"".join(animals) + struct.pack("<i", 0))
+            payload = b"\x01\x01" + text(f"MelvorBase:{enclosure}") + struct.pack("<i", len(enc)) + enc
+        out += text(f"MelvorBase:{land}") + struct.pack("<i", len(payload)) + payload
+    return out + b"tail"

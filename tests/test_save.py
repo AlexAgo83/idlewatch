@@ -3,7 +3,20 @@ import brotli
 import pytest
 
 import idlewatch
-from synthetic import UUID, astrology, compressed, equipped, guild_task, plot, records, save, slayer_task, text
+from synthetic import (
+    UUID,
+    astrology,
+    compressed,
+    equipped,
+    guild_task,
+    plot,
+    ranch_animal,
+    ranching,
+    records,
+    save,
+    slayer_task,
+    text,
+)
 
 EXPECTED = {
     "version": 28, "uuid": UUID, "name": "Tester", "mode": "Test", "saved_at": "2026-01-02T03:04:05Z",
@@ -11,7 +24,7 @@ EXPECTED = {
     "demo": True, "bank": {"stacks": 5, "tabs": 2, "items": {"Logs": 123, "Ore": 5, "Shrimp": 40}},
     "wallet": {"GoldPieces": 12345, "PrayerPoints": 90, "SlayerCoins": 678},
     "astrology": {"constellations": [], "active": None},
-    "mastery": {}, "equipment": {}, "slayer": {}, "farming": {},
+    "mastery": {}, "equipment": {}, "slayer": {}, "farming": {}, "ranching": [],
     "skills": [{"name": "Mining", "level": 20, "xp": 1000.5}, {"name": "Fishing", "level": 25, "xp": 2500.0},
                {"name": "Thieving", "level": 15, "xp": 750.2}, {"name": "Attack", "level": 30, "xp": 4000.0}]}
 
@@ -164,3 +177,19 @@ def test_unknown_component_layouts_read_as_empty():
     extra = {"MelvorBase:Combat": {"Equipment": b"\x05\0\0\0junk"}, "MelvorBase:Slayer": {"Tasks": b"\xff" * 3}}
     decoded = idlewatch.parse(save(extra=extra))
     assert decoded["equipment"] == {} and decoded["slayer"] == {} and decoded["skills"] == EXPECTED["skills"]
+
+
+def test_ranching_land_enclosures_and_animals():
+    sheep = [ranch_animal("Sheep", "SheepAdult"), ranch_animal("Sheep", "SheepChild", (0.5, 1.0, 0.3))]
+    chicken = ranch_animal("Chicken", "ChickenAdult", treats=("Corn", "Mealworm"))
+    blob = ranching([("Land1", "CowSheepEnclosureII", sheep), ("Land2", None, []),
+                     ("Land3", "ChickenCoopIII", [chicken])])
+    extra = {"MelvorBase:Ranching": {"Passive": blob}}
+    decoded = idlewatch.parse(save(release=True, demo=False, extra=extra))["ranching"]
+    assert [(land["land"], land["enclosure"], land["condition"], len(land["animals"])) for land in decoded] == [
+        ("Land1", "CowSheepEnclosureII", 0.99, 2), ("Land3", "ChickenCoopIII", 0.99, 1)]
+    assert decoded[0]["animals"][1] == {"species": "Sheep", "variant": "SheepChild", "gauges": [0.5, 1.0, 0.3],
+                                        "treats": [{"item": "Apple", "flag": False}]}
+    assert [t["item"] for t in decoded[1]["animals"][0]["treats"]] == ["Corn", "Mealworm"]
+    garbled = {"MelvorBase:Ranching": {"Passive": b"\x01MelvorBase:Land1 junk"}}
+    assert idlewatch.parse(save(extra=garbled))["ranching"] == []
