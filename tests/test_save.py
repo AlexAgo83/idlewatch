@@ -10,6 +10,7 @@ from synthetic import (
     equipped,
     guild_task,
     plot,
+    quest,
     ranch_animal,
     ranching,
     records,
@@ -24,7 +25,7 @@ EXPECTED = {
     "demo": True, "bank": {"stacks": 5, "tabs": 2, "items": {"Logs": 123, "Ore": 5, "Shrimp": 40}},
     "wallet": {"GoldPieces": 12345, "PrayerPoints": 90, "SlayerCoins": 678},
     "astrology": {"constellations": [], "active": None},
-    "mastery": {}, "equipment": {}, "slayer": {}, "farming": {}, "ranching": [],
+    "mastery": {}, "equipment": {}, "slayer": {}, "farming": {}, "ranching": [], "quests": {},
     "skills": [{"name": "Mining", "level": 20, "xp": 1000.5}, {"name": "Fishing", "level": 25, "xp": 2500.0},
                {"name": "Thieving", "level": 15, "xp": 750.2}, {"name": "Attack", "level": 30, "xp": 4000.0}]}
 
@@ -157,9 +158,11 @@ def test_equipment_mastery_slayer_and_farming():
         "MelvorBase:Slayer": {"Tasks": records([("Kuren", slayer_task("MagicCow", 31, 14, ["EvilPlant"])),
                                                 ("Hans", slayer_task("GasBall", 211)), ("Zaos", slayer_task(None))],
                                                tail=b"\x01" + text("MelvorBase:Hans"))},
-        "MelvorBase:Farming": {"Passive": b"\x01" + text("MelvorBase:MillFarm") + b"\0" * 8
-                               + records([("Allotment1", plot("Potato", True)), ("Herb1", plot("NomelHerb")),
-                                          ("Tree1", plot(None))])},
+        # Clock 73120538 (1/60 s); Allotment1's Potato is ready 117600 ticks later, Herb1's Nomel tick passed.
+        "MelvorBase:Farming": {"Passive": b"\x01" + text("MelvorBase:Trees") + struct.pack("<q", 73120538)
+                               + records([("Allotment1", plot("Onion", True, ("Potato", 324000, 73238138))),
+                                          ("Herb1", plot("NomelHerb", growing=("NomelHerb", 1080000, 73000000))),
+                                          ("Tree1", plot("WillowTree", True)), ("Tree2", plot(None))])},
     }
     decoded = idlewatch.parse(save(release=True, demo=False, extra=extra))
     assert decoded["equipment"] == {"Helmet": {"item": "MithrilHelmetU", "quantity": 1},
@@ -169,8 +172,12 @@ def test_equipment_mastery_slayer_and_farming():
     assert decoded["slayer"] == {
         "Kuren": {"monster": "MagicCow", "counters": [31, 14], "active": False, "blocked": ["EvilPlant"]},
         "Hans": {"monster": "GasBall", "counters": [211, 0], "active": True, "blocked": []}}
-    assert decoded["farming"] == {"Allotment1": {"crop": "Potato", "fertilised": True},
-                                  "Herb1": {"crop": "NomelHerb", "fertilised": False}}
+    assert decoded["farming"] == {
+        "Allotment1": {"crop": "Onion", "fertilised": True,
+                       "growing": {"crop": "Potato", "seconds": 5400, "remaining": 1960}},
+        "Herb1": {"crop": "NomelHerb", "fertilised": False,
+                  "growing": {"crop": "NomelHerb", "seconds": 18000, "remaining": 0}},
+        "Tree1": {"crop": "WillowTree", "fertilised": True, "growing": None}}
 
 
 def test_unknown_component_layouts_read_as_empty():
@@ -189,7 +196,24 @@ def test_ranching_land_enclosures_and_animals():
     assert [(land["land"], land["enclosure"], land["condition"], len(land["animals"])) for land in decoded] == [
         ("Land1", "CowSheepEnclosureII", 0.99, 2), ("Land3", "ChickenCoopIII", 0.99, 1)]
     assert decoded[0]["animals"][1] == {"species": "Sheep", "variant": "SheepChild", "gauges": [0.5, 1.0, 0.3],
-                                        "treats": [{"item": "Apple", "flag": False}]}
+                                        "hunger": 0.5, "comfort": 1.0, "satisfaction": 0.3,
+                                        "treats": [{"item": "Apple", "flag": False}],
+                                        "adult_in_minutes": -6807, "lifespan_minutes": 105}
     assert [t["item"] for t in decoded[1]["animals"][0]["treats"]] == ["Corn", "Mealworm"]
     garbled = {"MelvorBase:Ranching": {"Passive": b"\x01MelvorBase:Land1 junk"}}
     assert idlewatch.parse(save(extra=garbled))["ranching"] == []
+
+
+def test_quests_status_and_current_step():
+    """Status 3 complete, 1 active (its first unfinished step's tasks and goal progress), 0 not started."""
+    blob = records([("MQ1", quest(3, [(True, [({"0": 3.0}, True)])])),
+                    ("MQ7", quest(1, [(True, [({}, True)]), (False, [({"0": 0.0}, False)]),
+                                      (False, [({"0": 0.0}, False), ({"0": 0.0}, False)])])),
+                    ("MQ8", quest(0, [(False, [({"0": 0.0, "1": 0.0}, False)])]))], tail=b"\0\0")
+    decoded = idlewatch.parse(save(extra={"MelvorBase:Quests": {"Quests": blob}}))["quests"]
+    assert decoded == {
+        "MQ1": {"status": "complete", "steps_done": 1, "steps": 1, "step": None, "tasks": []},
+        "MQ7": {"status": "active", "steps_done": 1, "steps": 3, "step": "1",
+                "tasks": [{"task": "0", "done": False, "goals": {"0": 0.0}}]},
+        "MQ8": {"status": "not_started", "steps_done": 0, "steps": 1, "step": None, "tasks": []}}
+    assert idlewatch.parse(save(extra={"MelvorBase:Quests": {"Quests": b"\x01\0\0\0junk"}}))["quests"] == {}

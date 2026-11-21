@@ -33,10 +33,16 @@ A save path contains your Steam account number: keep that in mind before sharing
   started tasks) and the `untouched` count;
 - `slayer`: per Slayer master with a task, its `monster`, two `counters`, whether it is the
   `active` master, and the `blocked` monsters;
-- `farming`: per plot with a crop, its `crop` and whether it is `fertilised`;
+- `farming`: per plot with a crop chosen, its `crop`, whether an item slot holds `Fertiliser` (`fertilised`) and
+  `growing`: the growing `crop`, its growth time in `seconds` and the seconds `remaining` at save time (0 when
+  ready), or `null` when nothing grows;
 - `ranching`: each ranching land in use with its `enclosure`, the enclosure's `condition` (0 to 1) and its `animals`
-  (`species`, `variant`, three `gauges` in save order, presumably hunger, comfort and satisfaction, and the `treats`
-  slots with a flag whose meaning is not established).
+  (`species`, `variant`, `hunger`, `comfort` and `satisfaction` (also as the three `gauges` in save order), the
+  `treats` slots with a flag whose meaning is not established, `adult_in_minutes` (negative once grown up) and
+  `lifespan_minutes` left);
+- `quests`: per quest, its `status` (`not_started`, `active`, `complete`, or the raw number for another value),
+  `steps_done` out of `steps`, and for an active quest its current `step` and that step's `tasks` (`done`, and
+  `goals`: goal id to progress). Step, task and goal ids are the game's own.
 
 `idlewatch list` prints, for each save found, its `path`, `uuid`, `name`, `mode`, `saved_at` and
 `total_level`, or `path` and `error` when the save cannot be decoded.
@@ -98,7 +104,43 @@ and the active master id). Checked against a real release save (2026-11-21):
   every task of that save);
 - Slayer: a has-task flag, the monster id, two int32 `counters` whose meaning is not established
   (they are reported as they are), then block slots naming skipped monsters;
-- farming: after the grain mill header, one record per plot; the first id inside is the crop.
+- farming: see below.
 
 A layout that does not match reads as an empty value; it never prevents the rest of the save from
 loading.
+
+### Game clock, farming timers and ranching animals
+
+The Farming and Ranching `Passive` components count time in ticks of 1/60 s of total playtime: the int64 after the
+Farming header's flag and category id equals the character's `TotalPlaytime` statistic (milliseconds) times 0.06.
+A plot record is five flags, a presence flag and the chosen crop id, two item slots (a presence flag and an id
+each), and an int32 state: 0 nothing chosen, 1 chosen but nothing growing, 2 growing. A growing plot then holds the
+growing crop id, a flag, an int32, the growth time and the tick it is ready at. The growth time of every growing
+plot of a real release save matched the game's crop interval (Potato 1.5 h, Penril 2 h, Wheat 4 h, Compost 24 h),
+and between two saves 16 minutes apart the time left shrank by 16 minutes. The chosen crop and the growing crop can
+differ (four allotments of that save chose Onion, Lettuce, Strawberry and Garlic while Potato grew).
+
+The three animal gauges are the game's Hunger, Comfort and Satisfaction (its enclosure screen lists them in that
+order and computes Happiness = Hunger x 0.3 + Comfort x 0.3 + Satisfaction x 0.4, Comfort counting as 1 from 75 %).
+On a real save the second gauge equalled the enclosure condition for every animal, as the game says Comfort equals
+the enclosure's maintenance; the first was 1 for every animal, Sheep and Cows included, which need no food. After
+the treats come two float64 counts of minutes: until the animal's lifespan ends, and until it grows up. Their
+difference is the animal's lifespan minus its growing time (Sheep 6912, Cow 10368, Chicken 5184 minutes, as in the
+game data), a Cow calf gave the same age from both, and both shrank by 16 between saves 16 minutes apart. A third
+float64 and an int32 after the gauges are not interpreted.
+
+### Quests
+
+`Quests` holds one record per quest: an int32 status (0, 1 or 3 seen: not started, active, complete), then step
+records; a step is task records, a flag and an int32 status (2 done); a task is goal records (a float64 progress and
+two flags), three flags and an int32 status (2 done). On a real save every goal of the completed quests held exactly
+the game's `MaxProgress`, and the active quest's current step was its first step not done.
+
+### Not decoded
+
+- Pets: every skill's `Pets` component holds its pet id and a two-byte payload. Every payload of the save examined
+  was zero, so which value means a found pet is not established.
+- Slayer `counters`: on the save examined, the first was always at least the second, between about 2 and 4 times the
+  master's base task length, and the second was 0 for three masters, the active one included. This suggests the
+  task's kill count and the kills done, but no pair of saves with Slayer kills between them was available to
+  confirm it, so the field keeps its neutral name.

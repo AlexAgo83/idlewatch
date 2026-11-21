@@ -100,17 +100,40 @@ def slayer_task(monster: str | None, first: int = 0, second: int = 0, blocked=()
     return head + b"\0\x01" + struct.pack("<i", len(blocked)) + blocks
 
 
-def plot(crop: str | None, fertiliser: bool = False) -> bytes:
+def plot(crop: str | None, fertiliser: bool = False, growing: tuple | None = None) -> bytes:
+    """A farming plot as the release writes it: five flags, the chosen crop, two item slots, a state, then for a
+    growing plot (state 2) the growing crop, a flag, an int32, the growth time and the ready tick (1/60 s)."""
     if crop is None:
         return b"\0" * 12
-    fertilised = b"\x01" + text("MelvorBase:Fertiliser") if fertiliser else b"\0"
-    return b"\x01" * 6 + text(f"MelvorBase:{crop}") + fertilised + struct.pack("<i", 2) + b"\0" * 8
+    slot = b"\x01" + text("MelvorBase:Fertiliser") if fertiliser else b"\0"
+    out = b"\x01" * 5 + b"\x01" + text(f"MelvorBase:{crop}") + slot + slot
+    if growing is None:
+        return out + struct.pack("<i", 1)
+    name, duration, ready = growing
+    return (out + struct.pack("<i", 2) + text(f"MelvorBase:{name}") + b"\0"
+            + struct.pack("<iii", 2, duration, ready) + b"\0" * 8)
+
+
+def quest(status: int, steps) -> bytes:
+    """A quest record: status, then steps; each step holds tasks (goal id -> progress, done) and a step status."""
+    out = struct.pack("<ii", status, len(steps))
+    for step_id, (step_done, tasks) in enumerate(steps):
+        body = struct.pack("<i", len(tasks))
+        for task_id, (goals, task_done) in enumerate(tasks):
+            task = struct.pack("<i", len(goals)) + b"".join(
+                text(g) + struct.pack("<i", 10) + struct.pack("<d??", v, task_done, not task_done)
+                for g, v in goals.items())
+            task += b"\x01\x01\x01" + struct.pack("<i", 2 if task_done else 1)
+            body += text(str(task_id)) + struct.pack("<i", len(task)) + task
+        body += b"\x01" + struct.pack("<i", 2 if step_done else 0)
+        out += text(str(step_id)) + struct.pack("<i", len(body)) + body
+    return out
 
 
 def ranch_animal(species: str, variant: str, gauges=(1.0, 0.99, 0.94), treats=("Apple",)) -> bytes:
     body = (b"\0" + struct.pack("<ddd", *gauges) + b"\0" + struct.pack("<i", 13) + text(f"MelvorBase:{variant}")
             + struct.pack("<i", len(treats)) + b"".join(b"\0" + text(f"MelvorBase:{t}") for t in treats)
-            + struct.pack("<ddd", 1, 2, 3))
+            + struct.pack("<ddd", 105, -6807, 2060))
     return text(f"MelvorBase:{species}") + struct.pack("<i", len(body)) + body
 
 
