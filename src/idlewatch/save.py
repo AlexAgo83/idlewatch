@@ -233,24 +233,43 @@ def _slayer(blob: bytes) -> dict:
     return out
 
 
+TICKS = 60  # the game clock counts 1/60 s of total playtime (the Farming header matches TotalPlaytime x 0.06)
+
+
 def _farming(blob: bytes) -> dict:
-    """Plot -> its crop (the first id in the plot's record); an empty plot is left out."""
+    """Plot -> its chosen crop, whether a slot holds Fertiliser, and what grows: the growing crop, its growth time
+    and the seconds left at save time (0 when ready). A plot with no crop chosen is left out."""
     r = Reader(blob)
+    now = None
     if r.flag():
-        r.text()  # grain mill farm
-        r.take(8)
+        r.text()  # last viewed category, a UI choice
+        now = r.i64()
     out = {}
     for _ in range(r.count()):
         plot, size = _short(r.text()), r.i32()
-        ids = _ids(r.take(size))
-        if ids:
-            out[plot] = {"crop": ids[0], "fertilised": "Fertiliser" in ids[1:]}
+        p = Reader(r.take(size))
+        p.take(5)  # five flags, not interpreted
+        crop = _short(p.text()) if p.flag() else None
+        slots = [_short(p.text()) if p.flag() else None for _ in range(2)]
+        state = p.i32()  # 0 nothing chosen, 1 chosen but nothing growing, 2 growing
+        if crop is None:
+            continue
+        growing = None
+        if state == 2:
+            name = _short(p.text())
+            p.flag()
+            p.i32()
+            duration, ready = p.i32(), p.i32()
+            growing = {"crop": name, "seconds": duration // TICKS,
+                       "remaining": None if now is None else max(0, (ready - now) // TICKS)}
+        out[plot] = {"crop": crop, "fertilised": "Fertiliser" in slots, "growing": growing}
     return out
 
 
 def _ranching(blob: bytes) -> list[dict]:
-    """Ranching land in use: its enclosure, the enclosure's condition and each animal (species, variant, three
-    gauges in save order, presumably hunger, comfort and satisfaction, and its treat slots). Empty land is left out."""
+    """Ranching land in use: its enclosure, the enclosure's condition and each animal: species, variant, its three
+    gauges (hunger, comfort, satisfaction, the game's names and order), its treat slots and the minutes until it
+    grows up (negative once adult) and until its lifespan ends. Empty land is left out."""
     start = blob.find(b"MelvorBase:Land")
     if start < 5:
         raise ValueError("No ranching land")
@@ -280,8 +299,42 @@ def _ranching(blob: bytes) -> list[dict]:
             for _ in range(a.count()):
                 flag = a.flag()  # meaning not established (every treat of a save without treats reads False)
                 treats.append({"item": _short(a.text()), "flag": flag})
-            animals.append({"species": species, "variant": variant, "gauges": gauges, "treats": treats})
+            lifespan, adult = a.f64(), a.f64()  # minutes; a third float64 follows, not interpreted
+            animals.append({"species": species, "variant": variant, "gauges": gauges,
+                            **dict(zip(("hunger", "comfort", "satisfaction"), gauges, strict=True)), "treats": treats,
+                            "adult_in_minutes": round(adult), "lifespan_minutes": round(lifespan)})
         out.append({"land": land, "enclosure": enclosure, "condition": round(condition, 4), "animals": animals})
+    return out
+
+
+QUEST_STATUS = {0: "not_started", 1: "active", 3: "complete"}
+
+
+def _quests(blob: bytes) -> dict:
+    """Quest -> status, steps done out of the total and, for an active quest, its current step's tasks: each task's
+    done flag and its goals' progress (the game's goal ids). Record ids are the game's step, task and goal ids."""
+    out = {}
+    for quest, payload in _records(blob)[0]:
+        r = Reader(payload)
+        status = r.i32()
+        steps = []
+        for _ in range(r.count()):
+            step_id, s = r.text(), Reader(r.take(r.i32()))
+            tasks = []
+            for _ in range(s.count()):
+                task_id, t = s.text(), Reader(s.take(s.i32()))
+                goals = {}
+                for _ in range(t.count()):
+                    goal_id, g = t.text(), Reader(t.take(t.i32()))
+                    goals[goal_id] = g.f64()
+                t.take(3)  # three flags, not interpreted
+                tasks.append({"task": task_id, "done": t.i32() == 2, "goals": goals})
+            s.flag()
+            steps.append((step_id, s.i32() == 2, tasks))
+        current = next((s for s in steps if not s[1]), None) if status == 1 else None
+        out[_short(quest)] = {"status": QUEST_STATUS.get(status, status), "steps_done": sum(s[1] for s in steps),
+                              "steps": len(steps), "step": current[0] if current else None,
+                              "tasks": current[2] if current else []}
     return out
 
 
@@ -335,6 +388,7 @@ def parse(data: bytes) -> dict:
     save["slayer"] = _optional(_slayer, _component(data, entities, "MelvorBase:Slayer", "Tasks"), {})
     save["farming"] = _optional(_farming, _component(data, entities, "MelvorBase:Farming", "Passive"), {})
     save["ranching"] = _optional(_ranching, _component(data, entities, "MelvorBase:Ranching", "Passive"), [])
+    save["quests"] = _optional(_quests, _component(data, entities, "MelvorBase:Quests", "Quests"), {})
     save["astrology"] = {"constellations": [], "active": None}
     if "MelvorBase:Astrology" in entities:
         parts = _table(Reader(data, entities["MelvorBase:Astrology"][0]))
