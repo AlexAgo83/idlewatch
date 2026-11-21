@@ -33,7 +33,10 @@ A save path contains your Steam account number: keep that in mind before sharing
   started tasks) and the `untouched` count;
 - `slayer`: per Slayer master with a task, its `monster`, two `counters`, whether it is the
   `active` master, and the `blocked` monsters;
-- `farming`: per plot with a crop, its `crop` and whether it is `fertilised`.
+- `farming`: per plot with a crop, its `crop` and whether it is `fertilised`;
+- `ranching`: each ranching land in use with its `enclosure`, the enclosure's `condition` (0 to 1) and its `animals`
+  (`species`, `variant`, three `gauges` in save order, presumably hunger, comfort and satisfaction, and the `treats`
+  slots with a flag whose meaning is not established).
 
 `idlewatch list` prints, for each save found, its `path`, `uuid`, `name`, `mode`, `saved_at` and
 `total_level`, or `path` and `error` when the save cannot be decoded.
