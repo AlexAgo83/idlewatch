@@ -3,7 +3,7 @@ import brotli
 import pytest
 
 import idlewatch
-from synthetic import UUID, astrology, compressed, save, text
+from synthetic import UUID, astrology, compressed, equipped, guild_task, plot, records, save, slayer_task, text
 
 EXPECTED = {
     "version": 28, "uuid": UUID, "name": "Tester", "mode": "Test", "saved_at": "2026-01-02T03:04:05Z",
@@ -11,6 +11,7 @@ EXPECTED = {
     "demo": True, "bank": {"stacks": 5, "tabs": 2, "items": {"Logs": 123, "Ore": 5, "Shrimp": 40}},
     "wallet": {"GoldPieces": 12345, "PrayerPoints": 90, "SlayerCoins": 678},
     "astrology": {"constellations": [], "active": None},
+    "mastery": {}, "equipment": {}, "slayer": {}, "farming": {},
     "skills": [{"name": "Mining", "level": 20, "xp": 1000.5}, {"name": "Fishing", "level": 25, "xp": 2500.0},
                {"name": "Thieving", "level": 15, "xp": 750.2}, {"name": "Attack", "level": 30, "xp": 4000.0}]}
 
@@ -124,3 +125,42 @@ def test_astrology_unknown_tail_is_not_misread():
     action = astrology([("Deedree", 234, 10732.1, [], [])], "Deedree", flagged=True) + b"\x07"
     assert idlewatch.parse(save(release=True, demo=False, astrology_action=action))["astrology"] == {
         "constellations": [], "active": None}
+
+
+def test_equipment_mastery_slayer_and_farming():
+    """Equipped items, mastery guild tasks, Slayer tasks per master and crops per plot (release layouts)."""
+    import struct
+    extra = {
+        "MelvorBase:Combat": {"Equipment": records(
+            [("Helmet", equipped("MithrilHelmetU")), ("Ammo", equipped(None)),
+             ("Quiver", equipped("BronzeArrows", 250))],
+            tail=b"\x02\0\0\0loadouts")},
+        "MelvorBase:Woodcutting": {"Experience": struct.pack("<d", 100.0),
+                                   "MasteryGuild": b"\x01" + text("MelvorBase:Novice") + records(
+                                       [("WoodcuttingTask1", guild_task(200.0, True)),
+                                        ("WoodcuttingTask2", guild_task(2297.0)),
+                                        ("WoodcuttingTask3", guild_task(None)),
+                                        ("WoodcuttingTask4", guild_task(0.0))])},
+        "MelvorBase:Slayer": {"Tasks": records([("Kuren", slayer_task("MagicCow", 31, 14, ["EvilPlant"])),
+                                                ("Hans", slayer_task("GasBall", 211)), ("Zaos", slayer_task(None))],
+                                               tail=b"\x01" + text("MelvorBase:Hans"))},
+        "MelvorBase:Farming": {"Passive": b"\x01" + text("MelvorBase:MillFarm") + b"\0" * 8
+                               + records([("Allotment1", plot("Potato", True)), ("Herb1", plot("NomelHerb")),
+                                          ("Tree1", plot(None))])},
+    }
+    decoded = idlewatch.parse(save(release=True, demo=False, extra=extra))
+    assert decoded["equipment"] == {"Helmet": {"item": "MithrilHelmetU", "quantity": 1},
+                                    "Quiver": {"item": "BronzeArrows", "quantity": 250}}
+    assert decoded["mastery"] == {"Woodcutting": {
+        "done": ["WoodcuttingTask1"], "progress": {"WoodcuttingTask2": 2297.0}, "untouched": 1}}
+    assert decoded["slayer"] == {
+        "Kuren": {"monster": "MagicCow", "counters": [31, 14], "active": False, "blocked": ["EvilPlant"]},
+        "Hans": {"monster": "GasBall", "counters": [211, 0], "active": True, "blocked": []}}
+    assert decoded["farming"] == {"Allotment1": {"crop": "Potato", "fertilised": True},
+                                  "Herb1": {"crop": "NomelHerb", "fertilised": False}}
+
+
+def test_unknown_component_layouts_read_as_empty():
+    extra = {"MelvorBase:Combat": {"Equipment": b"\x05\0\0\0junk"}, "MelvorBase:Slayer": {"Tasks": b"\xff" * 3}}
+    decoded = idlewatch.parse(save(extra=extra))
+    assert decoded["equipment"] == {} and decoded["slayer"] == {} and decoded["skills"] == EXPECTED["skills"]

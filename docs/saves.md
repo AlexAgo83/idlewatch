@@ -27,7 +27,13 @@ A save path contains your Steam account number: keep that in mind before sharing
 - `bank`: `stacks` (bank slots, placeholders included), `tabs`, and `items` (short item name to
   quantity, placeholders left out);
 - `wallet`: currency short name to amount;
-- `astrology`: constellation records and the active constellation (see below).
+- `astrology`: constellation records and the active constellation (see below);
+- `equipment`: slot to `item` and `quantity`, empty slots left out;
+- `mastery`: per skill, its mastery guild tasks: `done` ids, `progress` (task id to progress for
+  started tasks) and the `untouched` count;
+- `slayer`: per Slayer master with a task, its `monster`, two `counters`, whether it is the
+  `active` master, and the `blocked` monsters;
+- `farming`: per plot with a crop, its `crop` and whether it is `fertilised`.
 
 `idlewatch list` prints, for each save found, its `path`, `uuid`, `name`, `mode`, `saved_at` and
 `total_level`, or `path` and `error` when the save cannot be decoded.
@@ -71,5 +77,25 @@ consumption of the component. Missing or unrecognized data yields
 `{"constellations": [], "active": null}` in JSON, without preventing the rest of the save from loading.
 
 These assumptions are covered by synthetic saves, including unknown and truncated layouts.
-No real release save is included or available for this change; the header and field semantics
-still need confirmation against one before claiming full release-format compatibility.
+Release saves written since 2026-11 end differently: a presence flag, the active id when set,
+then two zero bytes. Both tails are recognized, and checked against a real release save; any
+other tail still reads as empty. Measured on that save, `xp` is the constellation's knowledge:
+the minor nodes taken never exceed the game's knowledge thresholds it reaches.
+
+### Equipment, mastery guild, Slayer and farming
+
+These components share one shape: an int32 count, then records of an id, an int32 payload size
+and the payload. Equipment and Slayer keep more data after the records (loadouts; a presence flag
+and the active master id). Checked against a real release save (2026-11-21):
+
+- equipment slot payload: int32 quantity (-1 when empty), a flag, a has-item flag, the item id;
+- mastery guild: a flag and the last opened category, then one record per task. A 2-byte payload
+  is an untouched task; otherwise a flag, a goal key, an int32, a float64 progress and three flags,
+  the first set when the task is complete (it matched progress reaching the game's target for
+  every task of that save);
+- Slayer: a has-task flag, the monster id, two int32 `counters` whose meaning is not established
+  (they are reported as they are), then block slots naming skipped monsters;
+- farming: after the grain mill header, one record per plot; the first id inside is the crop.
+
+A layout that does not match reads as an empty value; it never prevents the rest of the save from
+loading.
