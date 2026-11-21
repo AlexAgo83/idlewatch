@@ -42,7 +42,7 @@ def astrology(constellations, active="", header=b"\0", flagged=False) -> bytes:
 
 
 def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2, 3, 4, 5), skills=SKILLS,
-         uid=UUID, release=False, astrology_action=None) -> bytes:
+         uid=UUID, release=False, astrology_action=None, extra=None) -> bytes:
     ticks = (at - datetime.datetime(1, 1, 1)) // datetime.timedelta(microseconds=1) * 10
     header = (struct.pack("<i", 28) + uuid.UUID(uid).bytes_le + text(name) + text(mode)
               + struct.pack("<q", (ticks | 1 << 63) - (1 << 64))  # DateTimeKind.Local, as ToBinary writes it
@@ -63,8 +63,45 @@ def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2,
         if astrology_action is not False:
             parts["Action"] = astrology_action
         entities["MelvorBase:Astrology"] = table(parts)
+    for entity, parts in (extra or {}).items():
+        entities[entity] = table(parts)
     return header + table(entities)
 
 
 def compressed(**kwargs) -> bytes:
     return brotli.compress(save(**kwargs))
+
+
+def record(name: str, payload: bytes) -> bytes:
+    return text(f"MelvorBase:{name}") + struct.pack("<i", len(payload)) + payload
+
+
+def records(items: list[tuple[str, bytes]], tail: bytes = b"") -> bytes:
+    return struct.pack("<i", len(items)) + b"".join(record(n, p) for n, p in items) + tail
+
+
+def equipped(item: str | None, quantity: int = 1) -> bytes:
+    if item is None:
+        return struct.pack("<i??", -1, False, False)
+    return struct.pack("<i??", quantity, False, True) + text(f"MelvorBase:{item}")
+
+
+def guild_task(progress: float | None, done: bool = False) -> bytes:
+    """A mastery guild task: untouched (2 bytes) or with a goal key, its progress and three flags."""
+    if progress is None:
+        return b"\0\x01"
+    return b"\x01" + text("0") + struct.pack("<id", 10, progress) + struct.pack("<???", done, not done, True)
+
+
+def slayer_task(monster: str | None, first: int = 0, second: int = 0, blocked=()) -> bytes:
+    head = (b"\x01" + text(f"MelvorBase:{monster}") + struct.pack("<ii", first, second)) if monster else b"\0" * 11
+    blocks = b"".join(text(f"Block{i}") + struct.pack("<i", 2 + len(text(f"MelvorBase:{m}"))) + b"\x01\x01"
+                      + text(f"MelvorBase:{m}") for i, m in enumerate(blocked, 1))
+    return head + b"\0\x01" + struct.pack("<i", len(blocked)) + blocks
+
+
+def plot(crop: str | None, fertiliser: bool = False) -> bytes:
+    if crop is None:
+        return b"\0" * 12
+    fertilised = b"\x01" + text("MelvorBase:Fertiliser") if fertiliser else b"\0"
+    return b"\x01" * 6 + text(f"MelvorBase:{crop}") + fertilised + struct.pack("<i", 2) + b"\0" * 8

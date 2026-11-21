@@ -155,6 +155,119 @@ def _active(r: Reader, identifier) -> str | bool | None:
         return False
 
 
+def _records(blob: bytes) -> tuple[list[tuple[str, bytes]], bytes]:
+    """A count, then (id, int32 size, payload) records: the shape of most named-state components; and what
+    follows them (Equipment keeps its loadouts there, Slayer Tasks its active master)."""
+    r = Reader(blob)
+    out = []
+    for _ in range(r.count()):
+        name, size = r.text(), r.i32()
+        if size < 0:
+            raise ValueError("Invalid record size")
+        out.append((name, r.take(size)))
+    return out, blob[r.pos:]
+
+
+def _ids(blob: bytes) -> list[str]:
+    """Every length-prefixed MelvorBase id inside a payload, in order (short names)."""
+    found, i = [], 0
+    while i < len(blob):
+        n = blob[i]
+        word = blob[i + 1:i + 1 + n]
+        if 12 <= n < 0x80 and word.startswith(b"MelvorBase:") and word.isascii() and all(32 < c < 127 for c in word):
+            found.append(_short(word.decode()))
+            i += 1 + n
+        else:
+            i += 1
+    return found
+
+
+def _equipment(blob: bytes) -> dict:
+    """Slot -> {item, quantity}; an empty slot (quantity -1, no item) is left out."""
+    out = {}
+    for slot, payload in _records(blob)[0]:
+        r = Reader(payload)
+        quantity, _, has = r.i32(), r.flag(), r.flag()
+        if has:
+            out[_short(slot)] = {"item": _short(r.text()), "quantity": quantity}
+    return out
+
+
+def _mastery(blob: bytes) -> dict:
+    """The skill's mastery guild tasks: done ids, in-progress ids with their progress, and untouched counts."""
+    r = Reader(blob)
+    if r.flag():
+        r.text()  # last opened category, a UI choice
+    done, progress, untouched = [], {}, 0
+    for _ in range(r.count()):
+        name, size = _short(r.text()), r.i32()
+        payload = Reader(r.take(size))
+        if size == 2:
+            untouched += 1
+            continue
+        payload.flag()
+        payload.text()  # goal key within the task
+        payload.i32()
+        value, complete = payload.f64(), payload.flag()
+        if complete:
+            done.append(name)
+        elif value > 0:
+            progress[name] = round(value, 1)
+    return {"done": done, "progress": progress, "untouched": untouched}
+
+
+def _slayer(blob: bytes) -> dict:
+    """Master -> current task monster (when one is set), the two counters after it (meaning unverified) and
+    the monsters it is told to skip; the master whose task is active is flagged."""
+    out = {}
+    records, tail = _records(blob)
+    tail_reader = Reader(tail)
+    active = _short(tail_reader.text()) if tail and tail_reader.flag() else None
+    for master, payload in records:
+        r = Reader(payload)
+        if not r.flag():
+            continue
+        monster, first, second = _short(r.text()), r.i32(), r.i32()
+        out[_short(master)] = {"monster": monster, "counters": [first, second], "active": _short(master) == active,
+                               "blocked": [i for i in _ids(payload[r.pos:]) if i != monster]}
+    return out
+
+
+def _farming(blob: bytes) -> dict:
+    """Plot -> its crop (the first id in the plot's record); an empty plot is left out."""
+    r = Reader(blob)
+    if r.flag():
+        r.text()  # grain mill farm
+        r.take(8)
+    out = {}
+    for _ in range(r.count()):
+        plot, size = _short(r.text()), r.i32()
+        ids = _ids(r.take(size))
+        if ids:
+            out[plot] = {"crop": ids[0], "fertilised": "Fertiliser" in ids[1:]}
+    return out
+
+
+def _component(data: bytes, entities: dict, entity: str, name: str):
+    if entity not in entities:
+        return None
+    parts = _table(Reader(data, entities[entity][0]))
+    if name not in parts:
+        return None
+    pos, size = parts[name]
+    return data[pos:pos + size]
+
+
+def _optional(decode, blob, empty):
+    """Unknown layouts read as empty rather than failing the whole save (they are not documented)."""
+    if blob is None:
+        return empty
+    try:
+        return decode(blob)
+    except (ValueError, IndexError, UnicodeDecodeError, struct.error):
+        return empty
+
+
 def parse(data: bytes) -> dict:
     """Decode a decompressed save into plain values."""
     r = Reader(data)
@@ -174,6 +287,16 @@ def parse(data: bytes) -> dict:
             level = x.i32() if exp[1] == 12 else level_for(xp)
             skills.append({"name": _short(name), "level": level, "xp": round(xp, 1)})
     save["skills"] = skills
+    save["mastery"] = {}
+    for name in entities:
+        blob = _component(data, entities, name, "MasteryGuild")
+        if blob is not None:
+            guild = _optional(_mastery, blob, None)
+            if guild:
+                save["mastery"][_short(name)] = guild
+    save["equipment"] = _optional(_equipment, _component(data, entities, "MelvorBase:Combat", "Equipment"), {})
+    save["slayer"] = _optional(_slayer, _component(data, entities, "MelvorBase:Slayer", "Tasks"), {})
+    save["farming"] = _optional(_farming, _component(data, entities, "MelvorBase:Farming", "Passive"), {})
     save["astrology"] = {"constellations": [], "active": None}
     if "MelvorBase:Astrology" in entities:
         parts = _table(Reader(data, entities["MelvorBase:Astrology"][0]))
