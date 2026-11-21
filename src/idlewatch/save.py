@@ -130,7 +130,7 @@ def _astrology(action: bytes) -> dict:
     return empty
 
 
-def _active(r: Reader, identifier) -> str | None | bool:
+def _active(r: Reader, identifier) -> str | bool | None:
     """The active constellation that ends the Action blob, or False when the tail is not recognized.
 
     Early release saves end with the id itself; later ones (2026-11) write a presence flag, the id when set, then
