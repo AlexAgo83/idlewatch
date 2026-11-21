@@ -29,13 +29,15 @@ def tab(label: str, items) -> bytes:
             + text(label) + struct.pack("<i", 1) + struct.pack("<??", True, False) + text("tag"))
 
 
-def astrology(constellations, active="", header=b"\0") -> bytes:
+def astrology(constellations, active="", header=b"\0", flagged=False) -> bytes:
     """Build an Action blob with an opaque header and length-prefixed constellation records."""
     out = header + struct.pack("<i", len(constellations))
     for name, value, xp, minor, major in constellations:
         out += text(f"MelvorBase:{name}") + struct.pack("<id", value, xp)
         for nodes in (minor, major):
             out += struct.pack("<i", len(nodes)) + b"".join(text(f"MelvorBase:{node}") for node in nodes)
+    if flagged:  # later release saves: presence flag, the id when set, two zero bytes
+        return out + (b"\x01" + text(f"MelvorBase:{active}") if active else b"\0") + b"\0\0"
     return out + text(f"MelvorBase:{active}" if active else "")
 
 

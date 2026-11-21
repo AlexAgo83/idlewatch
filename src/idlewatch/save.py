@@ -123,12 +123,36 @@ def _astrology(action: bytes) -> dict:
                 major = [identifier(r) for _ in range(r.count())]
                 constellations.append({"id": name, "value": value, "xp": xp,
                                        "minor": minor, "major": major})
-            active = identifier(r, optional=True)
-            if r.pos == len(action) and (active is None or active in ids):
+            if (active := _active(r, identifier)) is not False and (active is None or active in ids):
                 return {"constellations": constellations, "active": active}
         except ValueError:
             continue
     return empty
+
+
+def _active(r: Reader, identifier) -> str | bool | None:
+    """The active constellation that ends the Action blob, or False when the tail is not recognized.
+
+    Early release saves end with the id itself; later ones (2026-11) write a presence flag, the id when set, then
+    two zero bytes. Both must consume the blob exactly, so another layout is never misread.
+    """
+    start = r.pos
+    try:
+        active = identifier(r, optional=True)
+        if r.pos == len(r.data):
+            return active
+    except ValueError:
+        pass
+    r.pos = start
+    try:
+        flag = r.take(1)[0]
+        if flag > 1:
+            return False
+        active = identifier(r) if flag else None
+        tail = r.data[r.pos:]
+        return active if len(tail) <= 4 and not tail.strip(b"\0") else False
+    except ValueError:
+        return False
 
 
 def parse(data: bytes) -> dict:

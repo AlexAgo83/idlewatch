@@ -108,3 +108,19 @@ def test_unknown_astrology_layout_does_not_break_loading(tmp_path, action):
     assert decoded["astrology"] == {"constellations": [], "active": None}
     assert decoded["bank"] == EXPECTED["bank"]
     assert decoded["wallet"] == EXPECTED["wallet"]
+
+
+@pytest.mark.parametrize("active", ["Arachi", ""])
+def test_astrology_flagged_active_tail(active):
+    """Later release saves: a presence flag before the active id and two zero bytes after it (2026-11)."""
+    action = astrology([("Deedree", 234, 10732.1, ["DeedreeA1"], ["DeedreeMajor1"]), ("Arachi", 16, 50.0, [], [])],
+                       active, header=b"\0\x01\0\0\0\0\xb4\0\0\0\0\0\0\0\x01\x01", flagged=True)
+    decoded = idlewatch.parse(save(release=True, demo=False, astrology_action=action))["astrology"]
+    assert [c["id"] for c in decoded["constellations"]] == ["Deedree", "Arachi"]
+    assert decoded["active"] == (active or None)
+
+
+def test_astrology_unknown_tail_is_not_misread():
+    action = astrology([("Deedree", 234, 10732.1, [], [])], "Deedree", flagged=True) + b"\x07"
+    assert idlewatch.parse(save(release=True, demo=False, astrology_action=action))["astrology"] == {
+        "constellations": [], "active": None}
