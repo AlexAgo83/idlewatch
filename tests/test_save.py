@@ -25,7 +25,7 @@ EXPECTED = {
     "demo": True, "bank": {"stacks": 5, "tabs": 2, "items": {"Logs": 123, "Ore": 5, "Shrimp": 40}},
     "wallet": {"GoldPieces": 12345, "PrayerPoints": 90, "SlayerCoins": 678},
     "astrology": {"constellations": [], "active": None},
-    "mastery": {}, "equipment": {}, "slayer": {}, "farming": {}, "ranching": [], "quests": {},
+    "mastery": {}, "equipment": {}, "loadouts": {}, "slayer": {}, "farming": {}, "ranching": [], "quests": {},
     "skills": [{"name": "Mining", "level": 20, "xp": 1000.5}, {"name": "Fishing", "level": 25, "xp": 2500.0},
                {"name": "Thieving", "level": 15, "xp": 750.2}, {"name": "Attack", "level": 30, "xp": 4000.0}]}
 
@@ -148,7 +148,8 @@ def test_equipment_mastery_slayer_and_farming():
         "MelvorBase:Combat": {"Equipment": records(
             [("Helmet", equipped("MithrilHelmetU")), ("Ammo", equipped(None)),
              ("Quiver", equipped("BronzeArrows", 250))],
-            tail=b"\x02\0\0\0loadouts")},
+            tail=records([("Loadout2", records([("Helmet", equipped("ChainmailCowlU")), ("Ammo", equipped("SapphireBolts", 463))])),
+                          ("Loadout3", records([("Weapon", equipped("WaterBattlewand")), ("Boots", equipped(None))]))]))},
         "MelvorBase:Woodcutting": {"Experience": struct.pack("<d", 100.0),
                                    "MasteryGuild": b"\x01" + text("MelvorBase:Novice") + records(
                                        [("WoodcuttingTask1", guild_task(200.0, True)),
@@ -167,6 +168,9 @@ def test_equipment_mastery_slayer_and_farming():
     decoded = idlewatch.parse(save(release=True, demo=False, extra=extra))
     assert decoded["equipment"] == {"Helmet": {"item": "MithrilHelmetU", "quantity": 1},
                                     "Quiver": {"item": "BronzeArrows", "quantity": 250}}
+    assert decoded["loadouts"] == {"Loadout2": {"Helmet": {"item": "ChainmailCowlU", "quantity": 1},
+                                                "Ammo": {"item": "SapphireBolts", "quantity": 463}},
+                                   "Loadout3": {"Weapon": {"item": "WaterBattlewand", "quantity": 1}}}
     assert decoded["mastery"] == {"Woodcutting": {
         "done": ["WoodcuttingTask1"], "progress": {"WoodcuttingTask2": 2297.0}, "untouched": 1}}
     assert decoded["slayer"] == {
@@ -183,7 +187,7 @@ def test_equipment_mastery_slayer_and_farming():
 def test_unknown_component_layouts_read_as_empty():
     extra = {"MelvorBase:Combat": {"Equipment": b"\x05\0\0\0junk"}, "MelvorBase:Slayer": {"Tasks": b"\xff" * 3}}
     decoded = idlewatch.parse(save(extra=extra))
-    assert decoded["equipment"] == {} and decoded["slayer"] == {} and decoded["skills"] == EXPECTED["skills"]
+    assert decoded["equipment"] == {} and decoded["loadouts"] == {} and decoded["slayer"] == {} and decoded["skills"] == EXPECTED["skills"]
 
 
 def test_ranching_land_enclosures_and_animals():
