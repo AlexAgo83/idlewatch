@@ -29,6 +29,8 @@ A save path contains your Steam account number: keep that in mind before sharing
 - `wallet`: currency short name to amount;
 - `astrology`: constellation records and the active constellation (see below);
 - `equipment`: slot to `item` and `quantity`, empty slots left out;
+- `loadouts`: the stored equipment sets by id (`Loadout2`, `Loadout3`), each shaped like `equipment`;
+  the worn set is the id missing from the numbering;
 - `mastery`: per skill, its mastery guild tasks: `done` ids, `progress` (task id to progress for
   started tasks) and the `untouched` count;
 - `slayer`: per Slayer master with a task, its `monster`, two `counters`, whether it is the
@@ -98,6 +100,8 @@ and the payload. Equipment and Slayer keep more data after the records (loadouts
 and the active master id). Checked against a real release save (2026-11-21):
 
 - equipment slot payload: int32 quantity (-1 when empty), a flag, a has-item flag, the item id;
+- loadouts, after the worn slots: an int32 count, then records of a loadout id, an int32 size and
+  that set's slot records (checked 2026-11-22);
 - mastery guild: a flag and the last opened category, then one record per task. A 2-byte payload
   is an untouched task; otherwise a flag, a goal key, an int32, a float64 progress and three flags,
   the first set when the task is complete (it matched progress reaching the game's target for

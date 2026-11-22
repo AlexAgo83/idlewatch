@@ -193,6 +193,13 @@ def _equipment(blob: bytes) -> dict:
     return out
 
 
+def _loadouts(blob: bytes) -> dict:
+    """The stored equipment sets after the worn slots: a count, then (loadout id, int32 size, slot records). The worn
+    set is the one missing from the numbering (Loadout1 when Loadout2 and Loadout3 are stored)."""
+    tail = _records(blob)[1]
+    return {_short(name): _equipment(payload) for name, payload in _records(tail)[0]} if tail else {}
+
+
 def _mastery(blob: bytes) -> dict:
     """The skill's mastery guild tasks: done ids, in-progress ids with their progress, and untouched counts."""
     r = Reader(blob)
@@ -385,6 +392,7 @@ def parse(data: bytes) -> dict:
             if guild:
                 save["mastery"][_short(name)] = guild
     save["equipment"] = _optional(_equipment, _component(data, entities, "MelvorBase:Combat", "Equipment"), {})
+    save["loadouts"] = _optional(_loadouts, _component(data, entities, "MelvorBase:Combat", "Equipment"), {})
     save["slayer"] = _optional(_slayer, _component(data, entities, "MelvorBase:Slayer", "Tasks"), {})
     save["farming"] = _optional(_farming, _component(data, entities, "MelvorBase:Farming", "Passive"), {})
     save["ranching"] = _optional(_ranching, _component(data, entities, "MelvorBase:Ranching", "Passive"), [])
