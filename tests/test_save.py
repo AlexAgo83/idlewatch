@@ -148,8 +148,12 @@ def test_equipment_mastery_slayer_and_farming():
         "MelvorBase:Combat": {"Equipment": records(
             [("Helmet", equipped("MithrilHelmetU")), ("Ammo", equipped(None)),
              ("Quiver", equipped("BronzeArrows", 250))],
-            tail=records([("Loadout2", records([("Helmet", equipped("ChainmailCowlU")), ("Ammo", equipped("SapphireBolts", 463))])),
-                          ("Loadout3", records([("Weapon", equipped("WaterBattlewand")), ("Boots", equipped(None))]))]))},
+            tail=records([
+                ("Loadout2", records([
+                    ("Helmet", equipped("ChainmailCowlU")), ("Ammo", equipped("SapphireBolts", 463)),
+                ])),
+                ("Loadout3", records([("Weapon", equipped("WaterBattlewand")), ("Boots", equipped(None))])),
+            ]))},
         "MelvorBase:Woodcutting": {"Experience": struct.pack("<d", 100.0),
                                    "MasteryGuild": b"\x01" + text("MelvorBase:Novice") + records(
                                        [("WoodcuttingTask1", guild_task(200.0, True)),
@@ -187,7 +191,10 @@ def test_equipment_mastery_slayer_and_farming():
 def test_unknown_component_layouts_read_as_empty():
     extra = {"MelvorBase:Combat": {"Equipment": b"\x05\0\0\0junk"}, "MelvorBase:Slayer": {"Tasks": b"\xff" * 3}}
     decoded = idlewatch.parse(save(extra=extra))
-    assert decoded["equipment"] == {} and decoded["loadouts"] == {} and decoded["slayer"] == {} and decoded["skills"] == EXPECTED["skills"]
+    assert (
+        decoded["equipment"] == {} and decoded["loadouts"] == {} and decoded["slayer"] == {}
+        and decoded["skills"] == EXPECTED["skills"]
+    )
 
 
 def test_ranching_land_enclosures_and_animals():
