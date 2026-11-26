@@ -228,3 +228,9 @@ def test_quests_status_and_current_step():
                 "tasks": [{"task": "0", "done": False, "goals": {"0": 0.0}}]},
         "MQ8": {"status": "not_started", "steps_done": 0, "steps": 1, "step": None, "tasks": []}}
     assert idlewatch.parse(save(extra={"MelvorBase:Quests": {"Quests": b"\x01\0\0\0junk"}}))["quests"] == {}
+
+
+def test_bank_tabs_with_the_later_trailing_byte():
+    """2026-11-25 release saves end each bank tab with one more byte (a real save failed on its second tab)."""
+    decoded = idlewatch.parse(save(tab_tail=b"\0"))
+    assert decoded["bank"] == EXPECTED["bank"] and decoded["wallet"] == EXPECTED["wallet"]

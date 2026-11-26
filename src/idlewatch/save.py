@@ -365,6 +365,41 @@ def _optional(decode, blob, empty):
         return empty
 
 
+def _inventory(blob: bytes) -> dict:
+    """Bank tabs. Later release saves end each tab with one more byte; the layout that ends exactly wins,
+    else the first one that decodes."""
+    found = None
+    for tail in (0, 1):
+        try:
+            x = Reader(blob)
+            x.i32()  # default tab for new items
+            tabs = x.count()
+            stacks, items = 0, {}
+            for _ in range(tabs):
+                x.take(14)  # three int32 stack limits and two flags
+                for _ in range(x.count()):
+                    quantity = x.i32()
+                    x.take(2)  # two flags; the first is set on real stacks too, so a placeholder is quantity 0
+                    item = _short(x.text())
+                    if quantity > 0:
+                        items[item] = items.get(item, 0) + quantity
+                    stacks += 1
+                x.text()  # tab label
+                for _ in range(x.count()):
+                    x.take(2)
+                    x.text()  # bank tag
+                x.take(tail)
+        except (ValueError, UnicodeDecodeError, struct.error):
+            continue
+        bank = {"stacks": stacks, "tabs": tabs, "items": items}
+        if x.pos == len(blob):
+            return bank
+        found = found or bank
+    if found is None:
+        raise ValueError("Unknown bank inventory layout")
+    return found
+
+
 def parse(data: bytes) -> dict:
     """Decode a decompressed save into plain values."""
     r = Reader(data)
@@ -407,24 +442,8 @@ def parse(data: bytes) -> dict:
     if "MelvorBase:Bank" in entities:
         parts = _table(Reader(data, entities["MelvorBase:Bank"][0]))
         if "Inventory" in parts:
-            x = Reader(data, parts["Inventory"][0])
-            x.i32()  # default tab for new items
-            tabs = x.count()
-            stacks, items = 0, {}
-            for _ in range(tabs):
-                x.take(14)  # three int32 stack limits and two flags
-                for _ in range(x.count()):
-                    quantity = x.i32()
-                    x.take(2)  # two flags; the first is set on real stacks too, so a placeholder is quantity 0
-                    item = _short(x.text())
-                    if quantity > 0:
-                        items[item] = items.get(item, 0) + quantity
-                    stacks += 1
-                x.text()  # tab label
-                for _ in range(x.count()):
-                    x.take(2)
-                    x.text()  # bank tag
-            save["bank"] = {"stacks": stacks, "tabs": tabs, "items": items}
+            pos, size = parts["Inventory"]
+            save["bank"] = _inventory(data[pos:pos + size])
         if "Wallet" in parts:
             w = Reader(data, parts["Wallet"][0])
             for _ in range(w.count()):
