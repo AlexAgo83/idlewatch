@@ -23,10 +23,10 @@ def table(entries: dict[str, bytes]) -> bytes:
                                                       for k, v in entries.items())
 
 
-def tab(label: str, items) -> bytes:
+def tab(label: str, items, tail=b"") -> bytes:
     return (struct.pack("<iii??", 0, 0, 0, False, False) + struct.pack("<i", len(items))
             + b"".join(struct.pack("<i??", n, held, False) + text(f"MelvorBase:{i}") for i, n, held in items)
-            + text(label) + struct.pack("<i", 1) + struct.pack("<??", True, False) + text("tag"))
+            + text(label) + struct.pack("<i", 1) + struct.pack("<??", True, False) + text("tag") + tail)
 
 
 def astrology(constellations, active="", header=b"\0", flagged=False) -> bytes:
@@ -42,14 +42,15 @@ def astrology(constellations, active="", header=b"\0", flagged=False) -> bytes:
 
 
 def save(name="Tester", mode="Test", demo=True, at=datetime.datetime(2026, 1, 2, 3, 4, 5), skills=SKILLS,
-         uid=UUID, release=False, astrology_action=None, extra=None) -> bytes:
+         uid=UUID, release=False, astrology_action=None, extra=None, tab_tail=b"") -> bytes:
     ticks = (at - datetime.datetime(1, 1, 1)) // datetime.timedelta(microseconds=1) * 10
     header = (struct.pack("<i", 28) + uuid.UUID(uid).bytes_le + text(name) + text(mode)
               + struct.pack("<q", (ticks | 1 << 63) - (1 << 64))  # DateTimeKind.Local, as ToBinary writes it
               + text("Combat") + text("res://Assets/Icons/Combat.png") + text("Treant")
               + text("res://Assets/Monsters/Treant.png") + struct.pack("<iqq?", 321, 12345, 678, demo))
-    inventory = (struct.pack("<ii", 0, 2) + tab("Main", [("Logs", 120, True), ("Ore", 5, False), ("Bones", 0, True)])
-                 + tab("Food", [("Shrimp", 40, False), ("Logs", 3, False)]))
+    inventory = (struct.pack("<ii", 0, 2)
+                 + tab("Main", [("Logs", 120, True), ("Ore", 5, False), ("Bones", 0, True)], tab_tail)
+                 + tab("Food", [("Shrimp", 40, False), ("Logs", 3, False)], tab_tail))
     wallet = struct.pack("<i", 3) + b"".join(struct.pack("<q", amount) + text(f"MelvorBase:{k}") for k, amount in
                                              (("GoldPieces", 12345), ("PrayerPoints", 90), ("SlayerCoins", 678)))
     entities = {"MelvorBase:OfflineProgress": table({"State": b"\x01\x02"}),
